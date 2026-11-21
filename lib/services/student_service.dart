@@ -206,4 +206,38 @@ class StudentService {
 
     await _students.doc(studentId).delete();
   }
+    // Assign morning and afternoon routes to a student
+  Future<void> assignStudentRoutes({
+    required String studentDocumentId,
+    required Map<String, dynamic> morningAssignment,
+    required Map<String, dynamic> afternoonAssignment,
+  }) async {
+    final uid = _currentUid;
+    final profile = await _getUserProfile();
+
+    await _validateStudentAccess(studentDocumentId, profile);
+
+    final studentDoc =
+        await _students.doc(studentDocumentId).get();
+
+    final studentData =
+        studentDoc.data() as Map<String, dynamic>;
+
+    final schoolId = studentData['schoolId']?.toString() ?? '';
+
+    if (schoolId.isEmpty) {
+      throw Exception('Student school information is missing.');
+    }
+
+    await _validateSchool(schoolId);
+
+    await _students.doc(studentDocumentId).update({
+      'routeAssignments': {
+        'morning': morningAssignment,
+        'afternoon': afternoonAssignment,
+      },
+      'modifiedAt': FieldValue.serverTimestamp(),
+      'modifiedBy': uid,
+    });
+  }
 }

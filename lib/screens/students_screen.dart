@@ -1,9 +1,9 @@
-
 import 'package:flutter/material.dart';
 
 import '../services/student_service.dart';
 import 'add_student_screen.dart';
 import 'edit_student_screen.dart';
+import 'assign_student_route_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   const StudentsScreen({super.key});
@@ -16,8 +16,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
   static const Color primaryBlue = Color(0xFF2563EB);
 
   final StudentService _studentService = StudentService();
-  final TextEditingController _searchController =
-      TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
 
@@ -30,22 +29,28 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Future<void> _addStudent() async {
     await Navigator.push(
       context,
+      MaterialPageRoute(builder: (context) => const AddStudentScreen()),
+    );
+  }
+
+  Future<void> _assignRoute(Map<String, dynamic> student) async {
+    await Navigator.push(
+      context,
       MaterialPageRoute(
-        builder: (context) => const AddStudentScreen(),
+        builder: (context) => AssignStudentRouteScreen(
+          studentDocumentId: student['id'],
+          studentData: student,
+        ),
       ),
     );
   }
 
-  Future<void> _editStudent(
-    Map<String, dynamic> student,
-  ) async {
+  Future<void> _editStudent(Map<String, dynamic> student) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => EditStudentScreen(
-          documentId: student['id'],
-          studentData: student,
-        ),
+        builder: (context) =>
+            EditStudentScreen(documentId: student['id'], studentData: student),
       ),
     );
   }
@@ -64,15 +69,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
         student['email'],
         student['schoolName'],
       ].any(
-        (value) =>
-            value?.toString().toLowerCase().contains(query) ?? false,
+        (value) => value?.toString().toLowerCase().contains(query) ?? false,
       );
     }).toList();
   }
 
-  Future<void> _deleteStudent(
-    Map<String, dynamic> student,
-  ) async {
+  Future<void> _deleteStudent(Map<String, dynamic> student) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -105,16 +107,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Student deleted successfully'),
-        ),
+        const SnackBar(content: Text('Student deleted successfully')),
       );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
   }
 
@@ -129,22 +128,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
         side: BorderSide(color: Colors.grey.shade200),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 8,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: primaryBlue.withValues(alpha: 0.1),
-          child: const Icon(
-            Icons.school_outlined,
-            color: primaryBlue,
-          ),
+          child: const Icon(Icons.school_outlined, color: primaryBlue),
         ),
         title: Text(
           student['fullName'] ?? 'Unknown Student',
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6),
@@ -171,19 +162,18 @@ class _StudentsScreenState extends State<StudentsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              tooltip: 'Assign Route',
+              icon: const Icon(Icons.alt_route, color: Colors.green),
+              onPressed: () => _assignRoute(student),
+            ),
+            IconButton(
               tooltip: 'Edit Student',
-              icon: const Icon(
-                Icons.edit_outlined,
-                color: primaryBlue,
-              ),
+              icon: const Icon(Icons.edit_outlined, color: primaryBlue),
               onPressed: () => _editStudent(student),
             ),
             IconButton(
               tooltip: 'Delete Student',
-              icon: const Icon(
-                Icons.delete_outline,
-                color: Colors.red,
-              ),
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
               onPressed: () => _deleteStudent(student),
             ),
           ],
@@ -197,18 +187,11 @@ class _StudentsScreenState extends State<StudentsScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.school_outlined,
-            size: 55,
-            color: Colors.grey,
-          ),
+          Icon(Icons.school_outlined, size: 55, color: Colors.grey),
           SizedBox(height: 12),
           Text(
             'No students found',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           SizedBox(height: 6),
           Text(
@@ -237,10 +220,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           children: [
             const Text(
               'Students',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 8),
@@ -304,9 +284,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryBlue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                 ),
               ),
@@ -334,11 +312,8 @@ class _StudentsScreenState extends State<StudentsScreen> {
                       );
                     }
 
-                    if (snapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
                     }
 
                     final allStudents = snapshot.data ?? [];
