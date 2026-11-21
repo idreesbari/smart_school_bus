@@ -1,5 +1,5 @@
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../services/auth_service.dart';
 import 'dashboard_screen.dart';
@@ -42,13 +42,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final role = profile?['role'];
 
-      String message;
-
-      if (role == 'schoolAdmin') {
-        message = 'School Admin login successful';
-      } else {
-        message = 'Main Admin login successful';
-      }
+      final message = role == 'schoolAdmin'
+          ? 'School Admin login successful'
+          : 'Main Admin login successful';
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
@@ -65,7 +61,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(
+          content: Text(e.toString()),
+        ),
       );
     } finally {
       if (mounted) {
@@ -126,7 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(color: Colors.grey),
                 ),
                 const SizedBox(height: 32),
-
                 TextField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -137,7 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 TextField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -160,7 +156,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 28),
-
                 SizedBox(
                   height: 50,
                   child: ElevatedButton(

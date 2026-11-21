@@ -90,33 +90,41 @@ class BusService {
   }
 
   // Get Buses
-  Stream<List<Map<String, dynamic>>> getBuses() async* {
-    final profile = await _getUserProfile();
+  // Get Buses
+Stream<List<Map<String, dynamic>>> getBuses() async* {
+  final profile = await _getUserProfile();
 
-    final role = profile['role'];
-    Query query = _buses;
+  final role = profile['role'];
+  Query query = _buses;
 
-    if (role == 'schoolAdmin') {
-      final schoolId = profile['schoolId']?.toString() ?? '';
+  if (role == 'schoolAdmin') {
+    final schoolId = profile['schoolId']?.toString() ?? '';
 
-      if (schoolId.isEmpty) {
-        throw Exception('No school assigned to this account.');
-      }
-
-      query = query.where('schoolId', isEqualTo: schoolId);
-    } else if (role != 'mainAdmin' && role != 'admin') {
-      throw Exception('You are not authorized to view buses.');
+    if (schoolId.isEmpty) {
+      throw Exception('No school assigned to this account.');
     }
 
-    yield* query.orderBy('busId').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return {
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>,
-        };
-      }).toList();
-    });
+    query = query.where('schoolId', isEqualTo: schoolId);
+  } else if (role != 'mainAdmin' && role != 'admin') {
+    throw Exception('You are not authorized to view buses.');
   }
+
+  yield* query.snapshots().map((snapshot) {
+    final buses = snapshot.docs.map((doc) {
+      return {
+        'id': doc.id,
+        ...doc.data() as Map<String, dynamic>,
+      };
+    }).toList();
+
+    buses.sort((a, b) =>
+        (a['busId'] ?? '').toString().compareTo(
+              (b['busId'] ?? '').toString(),
+            ));
+
+    return buses;
+  });
+}
 
   // Validate access to an existing bus
   Future<void> _validateBusAccess(
