@@ -1,9 +1,11 @@
+
 import 'package:flutter/material.dart';
 
 import '../services/student_service.dart';
 import 'add_student_screen.dart';
 import 'edit_student_screen.dart';
 import 'assign_student_route_screen.dart';
+import 'student_route_details_screen.dart';
 
 class StudentsScreen extends StatefulWidget {
   const StudentsScreen({super.key});
@@ -39,6 +41,19 @@ class _StudentsScreenState extends State<StudentsScreen> {
       MaterialPageRoute(
         builder: (context) => AssignStudentRouteScreen(
           studentDocumentId: student['id'],
+          studentData: student,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _viewRouteDetails(
+    Map<String, dynamic> student,
+  ) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StudentRouteDetailsScreen(
           studentData: student,
         ),
       ),
@@ -128,7 +143,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
         side: BorderSide(color: Colors.grey.shade200),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 8,
+        ),
         leading: CircleAvatar(
           backgroundColor: primaryBlue.withValues(alpha: 0.1),
           child: const Icon(Icons.school_outlined, color: primaryBlue),
@@ -161,6 +179,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              tooltip: 'View Route Details',
+              icon: const Icon(
+                Icons.route_outlined,
+                color: primaryBlue,
+              ),
+              onPressed: () => _viewRouteDetails(student),
+            ),
             IconButton(
               tooltip: 'Assign Route',
               icon: const Icon(Icons.alt_route, color: Colors.green),
@@ -222,16 +248,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
               'Students',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
-
             const SizedBox(height: 8),
-
             const Text(
               'Manage registered students in the Smart Bus system.',
               style: TextStyle(color: Colors.grey),
             ),
-
             const SizedBox(height: 24),
-
             Row(
               children: [
                 Expanded(
@@ -253,7 +275,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                     ),
                   ),
                 ),
-
                 if (!isMobile) ...[
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
@@ -272,7 +293,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 ],
               ],
             ),
-
             if (isMobile) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -289,9 +309,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 ),
               ),
             ],
-
             const SizedBox(height: 24),
-
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -333,9 +351,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                             fontSize: 15,
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
                         Expanded(
                           child: ListView.builder(
                             itemCount: students.length,
