@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/route_service.dart';
 import 'add_route_screen.dart';
 import 'edit_route_screen.dart';
+import 'route_details_screen.dart';
 
 class RoutesScreen extends StatefulWidget {
   const RoutesScreen({super.key});
@@ -110,6 +111,15 @@ class _RoutesScreenState extends State<RoutesScreen> {
     );
   }
 
+  void _viewRoute(Map<String, dynamic> route) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RouteDetailsScreen(routeData: route),
+      ),
+    );
+  }
+
   Widget _routeCard(Map<String, dynamic> route) {
     final isActive = route['isActive'] == true;
     final stops = route['stops'] as List? ?? [];
@@ -162,6 +172,11 @@ class _RoutesScreenState extends State<RoutesScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              icon: const Icon(Icons.visibility, color: Colors.green),
+              tooltip: 'View Details',
+              onPressed: () => _viewRoute(route),
+            ),
+            IconButton(
               icon: const Icon(Icons.edit, color: Color(0xFF2563EB)),
               tooltip: 'Edit Route',
               onPressed: () => _editRoute(route),
@@ -169,7 +184,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),
               tooltip: 'Delete Route',
-              onPressed: () => _deleteRoute(route['id']),
+              onPressed: () => _deleteRoute(route),
             ),
           ],
         ),
