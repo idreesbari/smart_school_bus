@@ -9,6 +9,7 @@ import 'students_screen.dart';
 import 'assistants_screen.dart';
 import 'drivers_screen.dart';
 import 'buses_screen.dart';
+import 'routes_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -387,11 +388,19 @@ class DashboardScreen extends StatelessWidget {
         ),
 
         _menuItem(
-          context,
-          Icons.route,
-          'Routes',
-          false,
-        ),
+  context,
+  Icons.route,
+  'Routes',
+  false,
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const RoutesScreen(),
+      ),
+    );
+  },
+),
 
         if (isMainAdmin)
           _menuItem(
