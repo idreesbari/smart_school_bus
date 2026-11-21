@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "663954624792",
+    "project_id": "smart-school-bus-qatar",
+    "storage_bucket": "smart-school-bus-qatar.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:663954624792:android:8cb6ca9370fbac7f764e6d",
+        "android_client_info": {
+          "package_name": "com.example.smart_school_bus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDc996q8JOqA_oA6jqQUIpvrIGAyb6wS3c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
