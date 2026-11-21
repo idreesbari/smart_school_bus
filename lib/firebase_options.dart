@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -50,7 +47,6 @@ class DefaultFirebaseOptions {
     projectId: 'smart-school-bus-qatar',
     storageBucket: 'smart-school-bus-qatar.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBgxQzEouhI84gw061YTvbGU0U7qKvVnV0',
     appId: '1:663954624792:ios:38a5175272d0efbe764e6d',
@@ -59,7 +55,6 @@ class DefaultFirebaseOptions {
     storageBucket: 'smart-school-bus-qatar.firebasestorage.app',
     iosBundleId: 'com.example.smartSchoolBus',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBgxQzEouhI84gw061YTvbGU0U7qKvVnV0',
     appId: '1:663954624792:ios:38a5175272d0efbe764e6d',
@@ -70,6 +65,15 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyB22OUky9JKGa27XNQgJrjspyVdH0NmlsU',
+    appId: '1:663954624792:web:28d3419fd2e48f40764e6d',
+    messagingSenderId: '663954624792',
+    projectId: 'smart-school-bus-qatar',
+    authDomain: 'smart-school-bus-qatar.firebaseapp.com',
+    storageBucket: 'smart-school-bus-qatar.firebasestorage.app',
+  );
+
+  static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyB22OUky9JKGa27XNQgJrjspyVdH0NmlsU',
     appId: '1:663954624792:web:28d3419fd2e48f40764e6d',
     messagingSenderId: '663954624792',
