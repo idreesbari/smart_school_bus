@@ -10,6 +10,9 @@ import 'assistants_screen.dart';
 import 'drivers_screen.dart';
 import 'buses_screen.dart';
 import 'routes_screen.dart';
+import 'driver_attendance_screen.dart';
+import 'attendance_reports_screen.dart';
+import 'school_calendar_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -41,9 +44,13 @@ class DashboardScreen extends StatelessWidget {
 
     final role = data['role'];
 
-    if (role != 'mainAdmin' &&
-        role != 'admin' &&
-        role != 'schoolAdmin') {
+    if (![
+      'mainAdmin',
+      'admin',
+      'schoolAdmin',
+      'driver',
+      'assistant',
+    ].contains(role)) {
       throw Exception('Invalid user role.');
     }
 
@@ -82,8 +89,15 @@ class DashboardScreen extends StatelessWidget {
 
         final profile = profileSnapshot.data!;
         final role = profile['role'];
+
         final isMainAdmin =
             role == 'mainAdmin' || role == 'admin';
+
+        final isSchoolAdmin = role == 'schoolAdmin';
+        final isDriver = role == 'driver';
+        final isAssistant = role == 'assistant';
+
+        final isStaff = isDriver || isAssistant;
 
         final schoolId = profile['schoolId']?.toString();
 
@@ -93,7 +107,6 @@ class DashboardScreen extends StatelessWidget {
 
             return Scaffold(
               backgroundColor: backgroundColor,
-
               drawer: isWide
                   ? null
                   : Drawer(
@@ -102,16 +115,19 @@ class DashboardScreen extends StatelessWidget {
                         child: _buildSidebar(
                           context,
                           isMainAdmin,
+                          isSchoolAdmin,
+                          isStaff,
                         ),
                       ),
                     ),
-
               appBar: AppBar(
                 backgroundColor: Colors.white,
                 elevation: 0,
-                title: const Text(
-                  'Smart Bus Admin',
-                  style: TextStyle(
+                title: Text(
+                  isStaff
+                      ? 'Smart Bus Management'
+                      : 'Smart Bus Admin',
+                  style: const TextStyle(
                     color: primaryBlue,
                     fontWeight: FontWeight.bold,
                   ),
@@ -141,7 +157,6 @@ class DashboardScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                 ],
               ),
-
               body: Row(
                 children: [
                   if (isWide)
@@ -151,134 +166,25 @@ class DashboardScreen extends StatelessWidget {
                       child: _buildSidebar(
                         context,
                         isMainAdmin,
+                        isSchoolAdmin,
+                        isStaff,
                       ),
                     ),
-
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Dashboard Overview',
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
+                      child: isStaff
+                          ? _buildStaffDashboard(
+                              context,
+                              isDriver,
+                            )
+                          : _buildAdminDashboard(
+                              context,
+                              profile,
+                              isMainAdmin,
+                              schoolId,
+                              constraints.maxWidth,
                             ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          Text(
-                            isMainAdmin
-                                ? 'Welcome to Smart Bus Management System'
-                                : 'Welcome to your School Dashboard',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                            ),
-                          ),
-
-                          if (!isMainAdmin) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'School: ${profile['schoolName'] ?? 'Assigned School'}',
-                              style: const TextStyle(
-                                color: primaryBlue,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-
-                          const SizedBox(height: 28),
-
-                          GridView.count(
-                            crossAxisCount:
-                                constraints.maxWidth > 1000
-                                    ? 4
-                                    : constraints.maxWidth > 500
-                                        ? 2
-                                        : 1,
-                            shrinkWrap: true,
-                            physics:
-                                const NeverScrollableScrollPhysics(),
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio:
-                                constraints.maxWidth < 500
-                                    ? 2.5
-                                    : 1.6,
-                            children: [
-                              _FirestoreStatCard(
-                                title: 'Total Students',
-                                collection: 'students',
-                                schoolId: schoolId,
-                                icon: Icons.school,
-                                color: const Color(0xFF2563EB),
-                              ),
-
-                              _FirestoreStatCard(
-                                title: 'Total Drivers',
-                                collection: 'drivers',
-                                schoolId: schoolId,
-                                icon: Icons.person,
-                                color: const Color(0xFF16A34A),
-                              ),
-
-                              _FirestoreStatCard(
-                                title: 'Total Assistants',
-                                collection: 'assistants',
-                                schoolId: schoolId,
-                                icon: Icons.support_agent,
-                                color: const Color(0xFF9333EA),
-                              ),
-
-                              _FirestoreStatCard(
-                                title: 'Total Buses',
-                                collection: 'buses',
-                                schoolId: schoolId,
-                                icon: Icons.directions_bus,
-                                color: const Color(0xFFF59E0B),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 30),
-
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(22),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius:
-                                  BorderRadius.circular(12),
-                            ),
-                            child: const Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Recent Activities',
-                                  style: TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                SizedBox(height: 24),
-                                Center(
-                                  child: Text(
-                                    'No activities available yet.',
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ],
@@ -290,132 +196,379 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildAdminDashboard(
+    BuildContext context,
+    Map<String, dynamic> profile,
+    bool isMainAdmin,
+    String? schoolId,
+    double screenWidth,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Dashboard Overview',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isMainAdmin
+              ? 'Welcome to Smart Bus Management System'
+              : 'Welcome to your School Dashboard',
+          style: const TextStyle(
+            color: Colors.grey,
+          ),
+        ),
+        if (!isMainAdmin) ...[
+          const SizedBox(height: 8),
+          Text(
+            'School: ${profile['schoolName'] ?? 'Assigned School'}',
+            style: const TextStyle(
+              color: primaryBlue,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 28),
+        GridView.count(
+          crossAxisCount: screenWidth > 1000
+              ? 4
+              : screenWidth > 500
+                  ? 2
+                  : 1,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: screenWidth < 500 ? 2.5 : 1.6,
+          children: [
+            _FirestoreStatCard(
+              title: 'Total Students',
+              collection: 'students',
+              schoolId: schoolId,
+              icon: Icons.school,
+              color: const Color(0xFF2563EB),
+            ),
+            _FirestoreStatCard(
+              title: 'Total Drivers',
+              collection: 'drivers',
+              schoolId: schoolId,
+              icon: Icons.person,
+              color: const Color(0xFF16A34A),
+            ),
+            _FirestoreStatCard(
+              title: 'Total Assistants',
+              collection: 'assistants',
+              schoolId: schoolId,
+              icon: Icons.support_agent,
+              color: const Color(0xFF9333EA),
+            ),
+            _FirestoreStatCard(
+              title: 'Total Buses',
+              collection: 'buses',
+              schoolId: schoolId,
+              icon: Icons.directions_bus,
+              color: const Color(0xFFF59E0B),
+            ),
+          ],
+        ),
+        const SizedBox(height: 30),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Recent Activities',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 24),
+              Center(
+                child: Text(
+                  'No activities available yet.',
+                  style: TextStyle(
+                    color: Colors.grey,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStaffDashboard(
+    BuildContext context,
+    bool isDriver,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isDriver ? 'Driver Dashboard' : 'Assistant Dashboard',
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isDriver
+              ? 'Welcome to your driver dashboard.'
+              : 'Welcome to your bus assistant dashboard.',
+          style: const TextStyle(
+            color: Colors.grey,
+          ),
+        ),
+        const SizedBox(height: 28),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.fact_check,
+                color: primaryBlue,
+                size: 38,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Student Attendance',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'View students assigned to your routes and '
+                'mark their attendance for each journey.',
+                style: TextStyle(
+                  color: Colors.grey,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const DriverAttendanceScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.fact_check),
+                  label: const Text('Open Student Attendance'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSidebar(
     BuildContext context,
     bool isMainAdmin,
+    bool isSchoolAdmin,
+    bool isStaff,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 25),
-
         _menuItem(
           context,
           Icons.dashboard,
           'Dashboard',
           true,
         ),
-
-        if (isMainAdmin)
+        if (!isStaff) ...[
+          if (isMainAdmin)
+            _menuItem(
+              context,
+              Icons.business,
+              'Schools',
+              false,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const SchoolsScreen(),
+                  ),
+                );
+              },
+            ),
           _menuItem(
             context,
-            Icons.business,
-            'Schools',
+            Icons.school,
+            'Students',
             false,
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) =>
-                      const SchoolsScreen(),
+                      const StudentsScreen(),
+                ),
+              );
+            },
+          ),
+          _menuItem(
+            context,
+            Icons.person,
+            'Bus Drivers',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      const DriversScreen(),
+                ),
+              );
+            },
+          ),
+          _menuItem(
+            context,
+            Icons.support_agent,
+            'Bus Assistants',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      const AssistantsScreen(),
+                ),
+              );
+            },
+          ),
+          _menuItem(
+            context,
+            Icons.directions_bus,
+            'Buses',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      const BusesScreen(),
+                  ),
+                );
+              },
+            ),
+          _menuItem(
+            context,
+            Icons.route,
+            'Routes',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      const RoutesScreen(),
                 ),
               );
             },
           ),
 
-        _menuItem(
-          context,
-          Icons.school,
-          'Students',
-          false,
-          onTap: () {
-            Navigator.push(
+          if (isSchoolAdmin) ...[
+            _menuItem(
               context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    const StudentsScreen(),
-              ),
-            );
-          },
-        ),
-
-        _menuItem(
-          context,
-          Icons.person,
-          'Bus Drivers',
-          false,
-          onTap: () {
-            Navigator.push(
+              Icons.assessment,
+              'Attendance Reports',
+              false,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const AttendanceReportsScreen(),
+                  ),
+                );
+              },
+            ),
+            _menuItem(
               context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    const DriversScreen(),
-              ),
-            );
-          },
-        ),
+              Icons.calendar_month,
+              'School Calendar',
+              false,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const SchoolCalendarScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
 
-        _menuItem(
-          context,
-          Icons.support_agent,
-          'Bus Assistants',
-          false,
-          onTap: () {
-            Navigator.push(
+          if (isMainAdmin)
+            _menuItem(
               context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    const AssistantsScreen(),
-              ),
-            );
-          },
-        ),
-
-        _menuItem(
-          context,
-          Icons.directions_bus,
-          'Buses',
-          false,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    const BusesScreen(),
-              ),
-            );
-          },
-        ),
-
-        _menuItem(
-  context,
-  Icons.route,
-  'Routes',
-  false,
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const RoutesScreen(),
-      ),
-    );
-  },
-),
-
-        if (isMainAdmin)
+              Icons.assessment,
+              'Reports',
+              false,
+            ),
+        ],
+        if (isStaff)
           _menuItem(
             context,
-            Icons.assessment,
-            'Reports',
+            Icons.fact_check,
+            'Student Attendance',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      const DriverAttendanceScreen(),
+                ),
+              );
+            },
+          ),
+        if (!isStaff)
+          _menuItem(
+            context,
+            Icons.settings,
+            'Settings',
             false,
           ),
-
-        _menuItem(
-          context,
-          Icons.settings,
-          'Settings',
-          false,
-        ),
       ],
     );
   }

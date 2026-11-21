@@ -11,8 +11,7 @@ class AuthService {
     String password,
   ) async {
     try {
-      UserCredential credential =
-          await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -27,7 +26,7 @@ class AuthService {
         throw Exception('User record not found.');
       }
 
-      final data = userDoc.data() as Map<String, dynamic>;
+      final data = userDoc.data()!;
 
       final role = data['role'];
       final isActive = data['isActive'] == true;
@@ -37,9 +36,15 @@ class AuthService {
         throw Exception('Your account is inactive.');
       }
 
-      if (role != 'admin' &&
-          role != 'mainAdmin' &&
-          role != 'schoolAdmin') {
+      const allowedRoles = [
+        'admin',
+        'mainAdmin',
+        'schoolAdmin',
+        'driver',
+        'assistant',
+      ];
+
+      if (!allowedRoles.contains(role)) {
         await _auth.signOut();
         throw Exception('Access denied. Invalid user role.');
       }
@@ -61,7 +66,52 @@ class AuthService {
         if (!schoolDoc.exists ||
             schoolDoc.data()?['isActive'] != true) {
           await _auth.signOut();
-          throw Exception('Assigned school is inactive or unavailable.');
+          throw Exception(
+            'Assigned school is inactive or unavailable.',
+          );
+        }
+      }
+
+      // Driver and Assistant must have a linked staff record.
+      if (role == 'driver' || role == 'assistant') {
+        final schoolId = data['schoolId'];
+
+        final staffId = role == 'driver'
+            ? data['driverId']
+            : data['assistantId'];
+
+        if (schoolId == null ||
+            schoolId.toString().isEmpty ||
+            staffId == null ||
+            staffId.toString().isEmpty) {
+          await _auth.signOut();
+          throw Exception(
+            'Staff account is missing its school or staff assignment.',
+          );
+        }
+
+        final collection = role == 'driver'
+            ? 'drivers'
+            : 'assistants';
+
+        final staffDoc = await _firestore
+            .collection(collection)
+            .doc(staffId)
+            .get();
+
+        if (!staffDoc.exists) {
+          await _auth.signOut();
+          throw Exception('Linked staff record not found.');
+        }
+
+        final staffData = staffDoc.data()!;
+
+        if (staffData['schoolId'] != schoolId ||
+            staffData['isActive'] != true) {
+          await _auth.signOut();
+          throw Exception(
+            'Staff record is inactive or belongs to another school.',
+          );
         }
       }
 
