@@ -29,7 +29,13 @@ class _AttendanceReportsScreenState
   bool _isLoading = true;
   bool _isExporting = false;
 
+  String _reportType = 'daily';
+
   DateTime _selectedDate = DateTime.now();
+  DateTime _selectedMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+  );
 
   String _journey = 'morning';
   String _event = 'pickup';
@@ -41,14 +47,24 @@ class _AttendanceReportsScreenState
 
   Stream<QuerySnapshot<Map<String, dynamic>>>? _attendanceStream;
 
-  String get _dateKey {
-    final year = _selectedDate.year.toString().padLeft(4, '0');
-    final month = _selectedDate.month.toString().padLeft(2, '0');
-    final day = _selectedDate.day.toString().padLeft(2, '0');
+  Future<Map<String, dynamic>>? _monthlyReportFuture;
+
+  String _dateKey(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
 
     return '$year-$month-$day';
   }
 
+  String get _dailyDateKey => _dateKey(_selectedDate);
+/*
+  String get _firstMonthDateKey =>
+      _dateKey(DateTime(_selectedMonth.year, _selectedMonth.month, 1));
+
+  String get _lastMonthDateKey =>
+      _dateKey(DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0));
+*/
   String get _eventField => '${_event}Status';
 
   String get _eventTitle {
@@ -64,6 +80,16 @@ class _AttendanceReportsScreenState
       default:
         return 'Attendance';
     }
+  }
+
+  String get _monthTitle {
+    const months = [
+      'January', 'February', 'March', 'April',
+      'May', 'June', 'July', 'August',
+      'September', 'October', 'November', 'December',
+    ];
+
+    return '${months[_selectedMonth.month - 1]} ${_selectedMonth.year}';
   }
 
   List<Map<String, dynamic>> get _journeyRoutes {
@@ -152,7 +178,9 @@ class _AttendanceReportsScreenState
         _routes = routes;
         _students = students;
         _isLoading = false;
+
         _updateAttendanceStream();
+        _refreshMonthlyReport();
       });
     } catch (e) {
       if (!mounted) return;
@@ -161,13 +189,19 @@ class _AttendanceReportsScreenState
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to load report: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showMessage('Unable to load report: $e', isError: true);
     }
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
   }
 
   void _updateAttendanceStream() {
@@ -179,9 +213,25 @@ class _AttendanceReportsScreenState
     _attendanceStream = _firestore
         .collection('attendance')
         .where('schoolId', isEqualTo: _schoolId)
-        .where('date', isEqualTo: _dateKey)
+        .where('date', isEqualTo: _dailyDateKey)
         .where('journey', isEqualTo: _journey)
         .snapshots();
+  }
+
+  void _refreshMonthlyReport() {
+    if (_schoolId == null) {
+      _monthlyReportFuture = null;
+      return;
+    }
+
+    _monthlyReportFuture = _fetchMonthlyReport();
+  }
+
+  void _changeReportType(String value) {
+    setState(() {
+      _reportType = value;
+      _refreshMonthlyReport();
+    });
   }
 
   void _changeJourney(String? value) {
@@ -193,6 +243,7 @@ class _AttendanceReportsScreenState
       _selectedRouteId = 'all';
 
       _updateAttendanceStream();
+      _refreshMonthlyReport();
     });
   }
 
@@ -201,6 +252,7 @@ class _AttendanceReportsScreenState
 
     setState(() {
       _event = value;
+      _refreshMonthlyReport();
     });
   }
 
@@ -209,6 +261,7 @@ class _AttendanceReportsScreenState
 
     setState(() {
       _selectedRouteId = value;
+      _refreshMonthlyReport();
     });
   }
 
@@ -228,8 +281,208 @@ class _AttendanceReportsScreenState
     });
   }
 
+  Future<void> _selectMonth() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedMonth,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'Select a date in the required month',
+    );
+
+    if (selected == null || !mounted) return;
+
+    setState(() {
+      _selectedMonth = DateTime(selected.year, selected.month);
+      _refreshMonthlyReport();
+    });
+  }
+
   // ------------------------------------------
-  // EXPORT ATTENDANCE TO EXCEL
+  // STUDENT ASSIGNMENT FILTER
+  // ------------------------------------------
+
+  List<Map<String, dynamic>> _getAssignedStudents() {
+    final assignedStudents = _students.values.where((student) {
+      if (student['isActive'] != true) return false;
+
+      final assignments =
+          student['routeAssignments'] as Map<String, dynamic>? ?? {};
+
+      final journeyAssignment =
+          assignments[_journey] as Map<String, dynamic>? ?? {};
+
+      if (_selectedRouteId != 'all') {
+        return journeyAssignment['routeId'] == _selectedRouteId;
+      }
+
+      return journeyAssignment['routeId'] != null;
+    }).toList();
+
+    assignedStudents.sort((a, b) {
+      return (a['fullName'] ?? '')
+          .toString()
+          .compareTo((b['fullName'] ?? '').toString());
+    });
+
+    return assignedStudents;
+  }
+
+  // ------------------------------------------
+  // MONTHLY REPORT CALCULATION
+  // ------------------------------------------
+
+  Future<Map<String, dynamic>> _fetchMonthlyReport() async {
+    if (_schoolId == null) {
+      throw Exception('School assignment not found.');
+    }
+
+    final firstDate =
+        DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+
+    final lastDate =
+        DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
+
+    final firstKey = _dateKey(firstDate);
+    final lastKey = _dateKey(lastDate);
+
+    final calendarSnapshot = await _firestore
+        .collection('schoolCalendar')
+        .where('schoolId', isEqualTo: _schoolId)
+        .where('date', isGreaterThanOrEqualTo: firstKey)
+        .where('date', isLessThanOrEqualTo: lastKey)
+        .get();
+
+    final calendarOverrides = <String, String>{};
+
+    for (final doc in calendarSnapshot.docs) {
+      final data = doc.data();
+      final date = data['date']?.toString();
+      final dayType = data['dayType']?.toString();
+
+      if (date != null && dayType != null) {
+        calendarOverrides[date] = dayType;
+      }
+    }
+
+    // Friday and Saturday are non-working by default.
+    // School Calendar entries can override this.
+    final workingDates = <String>[];
+
+    for (int day = 1; day <= lastDate.day; day++) {
+      final date = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month,
+        day,
+      );
+
+      final key = _dateKey(date);
+      final override = calendarOverrides[key];
+
+      if (override == 'holiday' || override == 'closed') {
+        continue;
+      }
+
+      if (override == 'working') {
+        workingDates.add(key);
+        continue;
+      }
+
+      if (date.weekday != DateTime.friday &&
+          date.weekday != DateTime.saturday) {
+        workingDates.add(key);
+      }
+    }
+
+    final attendanceSnapshot = await _firestore
+        .collection('attendance')
+        .where('schoolId', isEqualTo: _schoolId)
+        .where('date', isGreaterThanOrEqualTo: firstKey)
+        .where('date', isLessThanOrEqualTo: lastKey)
+        .where('journey', isEqualTo: _journey)
+        .get();
+
+    // Key format: date_studentDocumentId
+    final attendanceByDateAndStudent =
+        <String, Map<String, dynamic>>{};
+
+    for (final doc in attendanceSnapshot.docs) {
+      final data = doc.data();
+
+      if (_selectedRouteId != 'all' &&
+          data['routeId'] != _selectedRouteId) {
+        continue;
+      }
+
+      final date = data['date']?.toString() ?? '';
+      final studentId =
+          data['studentDocumentId']?.toString() ?? '';
+
+      if (date.isNotEmpty && studentId.isNotEmpty) {
+        attendanceByDateAndStudent['${date}_$studentId'] = data;
+      }
+    }
+
+    final assignedStudents = _getAssignedStudents();
+
+    final studentSummaries = <Map<String, dynamic>>[];
+
+    int totalPresent = 0;
+    int totalAbsent = 0;
+    int totalNotMarked = 0;
+
+    for (final student in assignedStudents) {
+      final studentId = student['id'].toString();
+
+      int present = 0;
+      int absent = 0;
+
+      for (final date in workingDates) {
+        final attendance =
+            attendanceByDateAndStudent['${date}_$studentId'];
+
+        final status = attendance?[_eventField]?.toString();
+
+        if (status == 'present') {
+          present++;
+        } else if (status == 'absent') {
+          absent++;
+        }
+      }
+
+      final notMarked =
+          workingDates.length - present - absent;
+
+      final percentage = workingDates.isEmpty
+          ? 0.0
+          : (present / workingDates.length) * 100;
+
+      totalPresent += present;
+      totalAbsent += absent;
+      totalNotMarked += notMarked;
+
+      studentSummaries.add({
+        ...student,
+        'present': present,
+        'absent': absent,
+        'notMarked': notMarked,
+        'percentage': percentage,
+      });
+    }
+
+    return {
+      'workingDates': workingDates,
+      'workingDays': workingDates.length,
+      'students': studentSummaries,
+      'totalStudents': assignedStudents.length,
+      'totalPresent': totalPresent,
+      'totalAbsent': totalAbsent,
+      'totalNotMarked': totalNotMarked,
+    };
+  }
+
+  // ------------------------------------------
+  // EXCEL EXPORT
   // ------------------------------------------
 
   Future<void> _exportToExcel() async {
@@ -240,234 +493,13 @@ class _AttendanceReportsScreenState
     });
 
     try {
-      // Get attendance records for selected date and journey.
-      final attendanceSnapshot = await _firestore
-          .collection('attendance')
-          .where('schoolId', isEqualTo: _schoolId)
-          .where('date', isEqualTo: _dateKey)
-          .where('journey', isEqualTo: _journey)
-          .get();
-
-      final attendanceByStudent =
-          <String, Map<String, dynamic>>{};
-
-      for (final doc in attendanceSnapshot.docs) {
-        final data = doc.data();
-
-        if (_selectedRouteId != 'all' &&
-            data['routeId'] != _selectedRouteId) {
-          continue;
-        }
-
-        final studentId =
-            data['studentDocumentId']?.toString() ?? '';
-
-        if (studentId.isNotEmpty) {
-          attendanceByStudent[studentId] = data;
-        }
+      if (_reportType == 'monthly') {
+        await _exportMonthlyToExcel();
+      } else {
+        await _exportDailyToExcel();
       }
-
-      // Find students assigned to the selected journey and route.
-      final assignedStudents = _students.values.where((student) {
-        if (student['isActive'] != true) return false;
-
-        final assignments =
-            student['routeAssignments'] as Map<String, dynamic>? ?? {};
-
-        final journeyAssignment =
-            assignments[_journey] as Map<String, dynamic>? ?? {};
-
-        if (_selectedRouteId != 'all') {
-          return journeyAssignment['routeId'] == _selectedRouteId;
-        }
-
-        return journeyAssignment['routeId'] != null;
-      }).toList();
-
-      assignedStudents.sort((a, b) {
-        return (a['fullName'] ?? '')
-            .toString()
-            .compareTo((b['fullName'] ?? '').toString());
-      });
-
-      int present = 0;
-      int absent = 0;
-      int notMarked = 0;
-
-      // Create Excel workbook.
-      final excel = Excel.createExcel();
-
-      final sheet = excel['Attendance Report'];
-
-      // Report heading.
-      sheet.appendRow([
-        TextCellValue('DAILY ATTENDANCE REPORT'),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('School ID'),
-        TextCellValue(_schoolId ?? ''),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Date'),
-        TextCellValue(_dateKey),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Journey'),
-        TextCellValue(
-          _journey == 'morning' ? 'Morning' : 'Afternoon',
-        ),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Event'),
-        TextCellValue(_eventTitle),
-      ]);
-
-      String routeName = 'All Routes';
-
-      if (_selectedRouteId != 'all') {
-        final selectedRoute = _routes.firstWhere(
-          (route) => route['id'] == _selectedRouteId,
-          orElse: () => {},
-        );
-
-        routeName =
-            '${selectedRoute['routeName'] ?? 'Selected Route'} '
-            '(${selectedRoute['routeCode'] ?? ''})';
-      }
-
-      sheet.appendRow([
-        TextCellValue('Route'),
-        TextCellValue(routeName),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue(''),
-      ]);
-
-      // Student table headings.
-      sheet.appendRow([
-        TextCellValue('No.'),
-        TextCellValue('Student Name'),
-        TextCellValue('Student ID'),
-        TextCellValue('Route'),
-        TextCellValue('Attendance Status'),
-      ]);
-
-      // Student attendance records.
-      int serialNumber = 1;
-
-      for (final student in assignedStudents) {
-        final studentId = student['id'].toString();
-
-        final attendance = attendanceByStudent[studentId];
-
-        final status =
-            attendance?[_eventField]?.toString() ?? 'notMarked';
-
-        String statusLabel;
-
-        if (status == 'present') {
-          present++;
-          statusLabel = 'Present';
-        } else if (status == 'absent') {
-          absent++;
-          statusLabel = 'Absent';
-        } else {
-          notMarked++;
-          statusLabel = 'Not Marked';
-        }
-
-        final assignments =
-            student['routeAssignments'] as Map<String, dynamic>? ?? {};
-
-        final journeyAssignment =
-            assignments[_journey] as Map<String, dynamic>? ?? {};
-
-        final studentRouteName =
-            journeyAssignment['routeName']?.toString() ?? '-';
-
-        sheet.appendRow([
-          IntCellValue(serialNumber),
-          TextCellValue(
-            student['fullName']?.toString() ?? 'Unknown Student',
-          ),
-          TextCellValue(
-            student['studentId']?.toString() ?? '-',
-          ),
-          TextCellValue(studentRouteName),
-          TextCellValue(statusLabel),
-        ]);
-
-        serialNumber++;
-      }
-
-      // Summary section.
-      sheet.appendRow([
-        TextCellValue(''),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('ATTENDANCE SUMMARY'),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Total Students'),
-        IntCellValue(assignedStudents.length),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Present'),
-        IntCellValue(present),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Absent'),
-        IntCellValue(absent),
-      ]);
-
-      sheet.appendRow([
-        TextCellValue('Not Marked'),
-        IntCellValue(notMarked),
-      ]);
-
-      // Save workbook to temporary directory.
-      final bytes = excel.save();
-
-      if (bytes == null) {
-        throw Exception('Unable to generate Excel file.');
-      }
-
-      final directory = await getTemporaryDirectory();
-
-      final safeDate = _dateKey.replaceAll('-', '');
-
-      final fileName =
-          'Attendance_${_journey}_${safeDate}.xlsx';
-
-      final file = File('${directory.path}/$fileName');
-
-      await file.writeAsBytes(bytes, flush: true);
-
-      if (!mounted) return;
-
-      // Open system sharing options.
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: 'Attendance Report - $_dateKey - $_eventTitle',
-      );
     } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Excel export failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showMessage('Excel export failed: $e', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -476,6 +508,321 @@ class _AttendanceReportsScreenState
       }
     }
   }
+
+  Future<void> _exportDailyToExcel() async {
+    final attendanceSnapshot = await _firestore
+        .collection('attendance')
+        .where('schoolId', isEqualTo: _schoolId)
+        .where('date', isEqualTo: _dailyDateKey)
+        .where('journey', isEqualTo: _journey)
+        .get();
+
+    final attendanceByStudent =
+        <String, Map<String, dynamic>>{};
+
+    for (final doc in attendanceSnapshot.docs) {
+      final data = doc.data();
+
+      if (_selectedRouteId != 'all' &&
+          data['routeId'] != _selectedRouteId) {
+        continue;
+      }
+
+      final studentId =
+          data['studentDocumentId']?.toString() ?? '';
+
+      if (studentId.isNotEmpty) {
+        attendanceByStudent[studentId] = data;
+      }
+    }
+
+    final assignedStudents = _getAssignedStudents();
+
+    int present = 0;
+    int absent = 0;
+    int notMarked = 0;
+
+    final excel = Excel.createExcel();
+    final sheet = excel['Attendance Report'];
+
+    sheet.appendRow([
+      TextCellValue('DAILY ATTENDANCE REPORT'),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('School ID'),
+      TextCellValue(_schoolId ?? ''),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Date'),
+      TextCellValue(_dailyDateKey),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Journey'),
+      TextCellValue(
+        _journey == 'morning' ? 'Morning' : 'Afternoon',
+      ),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Event'),
+      TextCellValue(_eventTitle),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Route'),
+      TextCellValue(_selectedRouteName()),
+    ]);
+
+    sheet.appendRow([TextCellValue('')]);
+
+    sheet.appendRow([
+      TextCellValue('No.'),
+      TextCellValue('Student Name'),
+      TextCellValue('Student ID'),
+      TextCellValue('Route'),
+      TextCellValue('Attendance Status'),
+    ]);
+
+    int serialNumber = 1;
+
+    for (final student in assignedStudents) {
+      final studentId = student['id'].toString();
+      final attendance = attendanceByStudent[studentId];
+
+      final status =
+          attendance?[_eventField]?.toString() ?? 'notMarked';
+
+      String statusLabel;
+
+      if (status == 'present') {
+        present++;
+        statusLabel = 'Present';
+      } else if (status == 'absent') {
+        absent++;
+        statusLabel = 'Absent';
+      } else {
+        notMarked++;
+        statusLabel = 'Not Marked';
+      }
+
+      final assignments =
+          student['routeAssignments'] as Map<String, dynamic>? ?? {};
+
+      final journeyAssignment =
+          assignments[_journey] as Map<String, dynamic>? ?? {};
+
+      sheet.appendRow([
+        IntCellValue(serialNumber),
+        TextCellValue(
+          student['fullName']?.toString() ?? 'Unknown Student',
+        ),
+        TextCellValue(student['studentId']?.toString() ?? '-'),
+        TextCellValue(
+          journeyAssignment['routeName']?.toString() ?? '-',
+        ),
+        TextCellValue(statusLabel),
+      ]);
+
+      serialNumber++;
+    }
+
+    sheet.appendRow([TextCellValue('')]);
+    sheet.appendRow([TextCellValue('ATTENDANCE SUMMARY')]);
+
+    sheet.appendRow([
+      TextCellValue('Total Students'),
+      IntCellValue(assignedStudents.length),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Present'),
+      IntCellValue(present),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Absent'),
+      IntCellValue(absent),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Not Marked'),
+      IntCellValue(notMarked),
+    ]);
+
+    await _saveAndShareExcel(
+      excel,
+      'Attendance_${_journey}_${_dailyDateKey.replaceAll('-', '')}.xlsx',
+      'Attendance Report - $_dailyDateKey - $_eventTitle',
+    );
+  }
+
+  Future<void> _exportMonthlyToExcel() async {
+    final report = await _fetchMonthlyReport();
+
+    final students =
+        report['students'] as List<Map<String, dynamic>>;
+
+    final excel = Excel.createExcel();
+    final sheet = excel['Monthly Attendance'];
+
+    sheet.appendRow([
+      TextCellValue('MONTHLY ATTENDANCE REPORT'),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('School ID'),
+      TextCellValue(_schoolId ?? ''),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Month'),
+      TextCellValue(_monthTitle),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Journey'),
+      TextCellValue(
+        _journey == 'morning' ? 'Morning' : 'Afternoon',
+      ),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Event'),
+      TextCellValue(_eventTitle),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Route'),
+      TextCellValue(_selectedRouteName()),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Working Days'),
+      IntCellValue(report['workingDays'] as int),
+    ]);
+
+    sheet.appendRow([TextCellValue('')]);
+
+    sheet.appendRow([
+      TextCellValue('No.'),
+      TextCellValue('Student Name'),
+      TextCellValue('Student ID'),
+      TextCellValue('Route'),
+      TextCellValue('Present'),
+      TextCellValue('Absent'),
+      TextCellValue('Not Marked'),
+      TextCellValue('Attendance %'),
+    ]);
+
+    int serialNumber = 1;
+
+    for (final student in students) {
+      final assignments =
+          student['routeAssignments'] as Map<String, dynamic>? ?? {};
+
+      final journeyAssignment =
+          assignments[_journey] as Map<String, dynamic>? ?? {};
+
+      sheet.appendRow([
+        IntCellValue(serialNumber),
+        TextCellValue(
+          student['fullName']?.toString() ?? 'Unknown Student',
+        ),
+        TextCellValue(student['studentId']?.toString() ?? '-'),
+        TextCellValue(
+          journeyAssignment['routeName']?.toString() ?? '-',
+        ),
+        IntCellValue(student['present'] as int),
+        IntCellValue(student['absent'] as int),
+        IntCellValue(student['notMarked'] as int),
+        TextCellValue(
+          '${(student['percentage'] as double).toStringAsFixed(1)}%',
+        ),
+      ]);
+
+      serialNumber++;
+    }
+
+    sheet.appendRow([TextCellValue('')]);
+    sheet.appendRow([TextCellValue('MONTHLY SUMMARY')]);
+
+    sheet.appendRow([
+      TextCellValue('Total Students'),
+      IntCellValue(report['totalStudents'] as int),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Working Days'),
+      IntCellValue(report['workingDays'] as int),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Present'),
+      IntCellValue(report['totalPresent'] as int),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Absent'),
+      IntCellValue(report['totalAbsent'] as int),
+    ]);
+
+    sheet.appendRow([
+      TextCellValue('Not Marked'),
+      IntCellValue(report['totalNotMarked'] as int),
+    ]);
+
+    await _saveAndShareExcel(
+      excel,
+      'Monthly_Attendance_${_journey}_${_selectedMonth.year}_${_selectedMonth.month.toString().padLeft(2, '0')}.xlsx',
+      'Monthly Attendance Report - $_monthTitle - $_eventTitle',
+    );
+  }
+
+  String _selectedRouteName() {
+    if (_selectedRouteId == 'all') {
+      return 'All Routes';
+    }
+
+    final selectedRoute = _routes.firstWhere(
+      (route) => route['id'] == _selectedRouteId,
+      orElse: () => {},
+    );
+
+    return '${selectedRoute['routeName'] ?? 'Selected Route'} '
+        '(${selectedRoute['routeCode'] ?? ''})';
+  }
+
+  Future<void> _saveAndShareExcel(
+    Excel excel,
+    String fileName,
+    String shareText,
+  ) async {
+    final bytes = excel.save();
+
+    if (bytes == null) {
+      throw Exception('Unable to generate Excel file.');
+    }
+
+    final directory = await getTemporaryDirectory();
+
+    final file = File('${directory.path}/$fileName');
+
+    await file.writeAsBytes(bytes, flush: true);
+
+    if (!mounted) return;
+
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: shareText,
+    );
+  }
+
+  // ------------------------------------------
+  // SUMMARY CARD
+  // ------------------------------------------
 
   Widget _buildSummaryCard(
     String title,
@@ -521,9 +868,7 @@ class _AttendanceReportsScreenState
     );
   }
 
-  Widget _buildStudentRow(
-    Map<String, dynamic> attendance,
-  ) {
+  Widget _buildStudentRow(Map<String, dynamic> attendance) {
     final studentId =
         attendance['studentDocumentId']?.toString() ?? '';
 
@@ -593,6 +938,10 @@ class _AttendanceReportsScreenState
     );
   }
 
+  // ------------------------------------------
+  // DAILY REPORT CONTENT
+  // ------------------------------------------
+
   Widget _buildReportContent() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _attendanceStream,
@@ -635,21 +984,7 @@ class _AttendanceReportsScreenState
           }
         }
 
-        final assignedStudents = _students.values.where((student) {
-          if (student['isActive'] != true) return false;
-
-          final assignments =
-              student['routeAssignments'] as Map<String, dynamic>? ?? {};
-
-          final journeyAssignment =
-              assignments[_journey] as Map<String, dynamic>? ?? {};
-
-          if (_selectedRouteId != 'all') {
-            return journeyAssignment['routeId'] == _selectedRouteId;
-          }
-
-          return journeyAssignment['routeId'] != null;
-        }).toList();
+        final assignedStudents = _getAssignedStudents();
 
         int present = 0;
         int absent = 0;
@@ -668,6 +1003,11 @@ class _AttendanceReportsScreenState
 
         final notMarked =
             assignedStudents.length - present - absent;
+
+        final markedPercentage = assignedStudents.isEmpty
+            ? 0
+            : ((present + absent) / assignedStudents.length * 100)
+                .round();
 
         return Column(
           children: [
@@ -716,7 +1056,7 @@ class _AttendanceReportsScreenState
                     ),
                   ),
                   Text(
-                    '${((present + absent) / (assignedStudents.isEmpty ? 1 : assignedStudents.length) * 100).round()}% Marked',
+                    '$markedPercentage% Marked',
                     style: const TextStyle(
                       color: primaryBlue,
                       fontWeight: FontWeight.w600,
@@ -758,6 +1098,453 @@ class _AttendanceReportsScreenState
     );
   }
 
+  // ------------------------------------------
+  // MONTHLY REPORT CONTENT
+  // ------------------------------------------
+
+  Widget _buildMonthlyReportContent() {
+    if (_monthlyReportFuture == null) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _monthlyReportFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Unable to load monthly report: ${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        final report = snapshot.data!;
+
+        final students =
+            report['students'] as List<Map<String, dynamic>>;
+
+        final workingDays = report['workingDays'] as int;
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSummaryCard(
+                              'Students',
+                              report['totalStudents'] as int,
+                              primaryBlue,
+                              Icons.people,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildSummaryCard(
+                              'Working Days',
+                              workingDays,
+                              Colors.blue,
+                              Icons.calendar_month,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSummaryCard(
+                              'Present',
+                              report['totalPresent'] as int,
+                              Colors.green,
+                              Icons.check_circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildSummaryCard(
+                              'Absent',
+                              report['totalAbsent'] as int,
+                              Colors.red,
+                              Icons.cancel,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildSummaryCard(
+                              'Not Marked',
+                              report['totalNotMarked'] as int,
+                              Colors.orange,
+                              Icons.pending_actions,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Student Monthly Summary (${students.length})',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: students.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No students are assigned to this route.',
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                      itemCount: students.length,
+                      itemBuilder: (context, index) {
+                        final student = students[index];
+
+                        final percentage =
+                            student['percentage'] as double;
+
+                        final assignments =
+                            student['routeAssignments']
+                                as Map<String, dynamic>? ?? {};
+
+                        final assignment =
+                            assignments[_journey]
+                                as Map<String, dynamic>? ?? {};
+
+                        return Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.only(bottom: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: Colors.grey.shade200,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor:
+                                          primaryBlue.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      child: const Icon(
+                                        Icons.person,
+                                        color: primaryBlue,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            student['fullName']
+                                                    ?.toString() ??
+                                                'Unknown Student',
+                                            style: const TextStyle(
+                                              fontWeight:
+                                                  FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Student ID: ${student['studentId'] ?? '-'}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      '${percentage.toStringAsFixed(1)}%',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.bold,
+                                        color: percentage >= 75
+                                            ? Colors.green
+                                            : percentage >= 50
+                                                ? Colors.orange
+                                                : Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    _monthlyCount(
+                                      'Present',
+                                      student['present'] as int,
+                                      Colors.green,
+                                    ),
+                                    _monthlyCount(
+                                      'Absent',
+                                      student['absent'] as int,
+                                      Colors.red,
+                                    ),
+                                    _monthlyCount(
+                                      'Not Marked',
+                                      student['notMarked'] as int,
+                                      Colors.orange,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Route: ${assignment['routeName'] ?? '-'}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ClipRRect(
+                                  borderRadius:
+                                      BorderRadius.circular(8),
+                                  child: LinearProgressIndicator(
+                                    value: percentage / 100,
+                                    minHeight: 7,
+                                    backgroundColor:
+                                        Colors.grey.shade200,
+                                    valueColor:
+                                        AlwaysStoppedAnimation<Color>(
+                                      percentage >= 75
+                                          ? Colors.green
+                                          : percentage >= 50
+                                              ? Colors.orange
+                                              : Colors.red,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _monthlyCount(
+    String title,
+    int count,
+    Color color,
+  ) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            count.toString(),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 17,
+            ),
+          ),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------
+  // FILTERS
+  // ------------------------------------------
+
+  Widget _buildFilters(List<Map<String, dynamic>> routes) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _changeReportType('daily'),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: _reportType == 'daily'
+                        ? primaryBlue
+                        : Colors.white,
+                    foregroundColor: _reportType == 'daily'
+                        ? Colors.white
+                        : primaryBlue,
+                    side: const BorderSide(color: primaryBlue),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  child: const Text('Daily Report'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _changeReportType('monthly'),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: _reportType == 'monthly'
+                        ? primaryBlue
+                        : Colors.white,
+                    foregroundColor: _reportType == 'monthly'
+                        ? Colors.white
+                        : primaryBlue,
+                    side: const BorderSide(color: primaryBlue),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                  child: const Text('Monthly Report'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: _reportType == 'daily'
+                ? _selectDate
+                : _selectMonth,
+            borderRadius: BorderRadius.circular(8),
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: _reportType == 'daily'
+                    ? 'Report Date'
+                    : 'Report Month',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.calendar_month),
+              ),
+              child: Text(
+                _reportType == 'daily'
+                    ? '${_selectedDate.day.toString().padLeft(2, '0')}/'
+                        '${_selectedDate.month.toString().padLeft(2, '0')}/'
+                        '${_selectedDate.year}'
+                    : _monthTitle,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _journey,
+            decoration: const InputDecoration(
+              labelText: 'Journey',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'morning',
+                child: Text('Morning Journey'),
+              ),
+              DropdownMenuItem(
+                value: 'afternoon',
+                child: Text('Afternoon Journey'),
+              ),
+            ],
+            onChanged: _changeJourney,
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _event,
+            decoration: const InputDecoration(
+              labelText: 'Attendance Event',
+              border: OutlineInputBorder(),
+            ),
+            items: _journey == 'morning'
+                ? const [
+                    DropdownMenuItem(
+                      value: 'pickup',
+                      child: Text('Morning Pickup'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'schoolArrival',
+                      child: Text('School Arrival'),
+                    ),
+                  ]
+                : const [
+                    DropdownMenuItem(
+                      value: 'boarding',
+                      child: Text('Afternoon Boarding'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'dropoff',
+                      child: Text('Afternoon Drop-off'),
+                    ),
+                  ],
+            onChanged: _changeEvent,
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _selectedRouteId,
+            decoration: const InputDecoration(
+              labelText: 'Route',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: 'all',
+                child: Text('All Routes'),
+              ),
+              ...routes.map((route) {
+                return DropdownMenuItem<String>(
+                  value: route['id'].toString(),
+                  child: Text(
+                    '${route['routeName'] ?? 'Route'} '
+                    '(${route['routeCode'] ?? ''})',
+                  ),
+                );
+              }),
+            ],
+            onChanged: _changeRoute,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final routes = _journeyRoutes;
@@ -765,7 +1552,11 @@ class _AttendanceReportsScreenState
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: const Text('Daily Attendance Report'),
+        title: Text(
+          _reportType == 'daily'
+              ? 'Daily Attendance Report'
+              : 'Monthly Attendance Report',
+        ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         actions: [
@@ -800,105 +1591,11 @@ class _AttendanceReportsScreenState
                 )
               : Column(
                   children: [
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          InkWell(
-                            onTap: _selectDate,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Report Date',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.calendar_month),
-                              ),
-                              child: Text(
-                                '${_selectedDate.day.toString().padLeft(2, '0')}/'
-                                '${_selectedDate.month.toString().padLeft(2, '0')}/'
-                                '${_selectedDate.year}',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _journey,
-                            decoration: const InputDecoration(
-                              labelText: 'Journey',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'morning',
-                                child: Text('Morning Journey'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'afternoon',
-                                child: Text('Afternoon Journey'),
-                              ),
-                            ],
-                            onChanged: _changeJourney,
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _event,
-                            decoration: const InputDecoration(
-                              labelText: 'Attendance Event',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: _journey == 'morning'
-                                ? const [
-                                    DropdownMenuItem(
-                                      value: 'pickup',
-                                      child: Text('Morning Pickup'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'schoolArrival',
-                                      child: Text('School Arrival'),
-                                    ),
-                                  ]
-                                : const [
-                                    DropdownMenuItem(
-                                      value: 'boarding',
-                                      child: Text('Afternoon Boarding'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'dropoff',
-                                      child: Text('Afternoon Drop-off'),
-                                    ),
-                                  ],
-                            onChanged: _changeEvent,
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _selectedRouteId,
-                            decoration: const InputDecoration(
-                              labelText: 'Route',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem(
-                                value: 'all',
-                                child: Text('All Routes'),
-                              ),
-                              ...routes.map((route) {
-                                return DropdownMenuItem<String>(
-                                  value: route['id'].toString(),
-                                  child: Text(
-                                    '${route['routeName'] ?? 'Route'} '
-                                    '(${route['routeCode'] ?? ''})',
-                                  ),
-                                );
-                              }),
-                            ],
-                            onChanged: _changeRoute,
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildFilters(routes),
                     Expanded(
-                      child: _buildReportContent(),
+                      child: _reportType == 'daily'
+                          ? _buildReportContent()
+                          : _buildMonthlyReportContent(),
                     ),
                   ],
                 ),

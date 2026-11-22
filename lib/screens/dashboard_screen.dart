@@ -13,6 +13,7 @@ import 'routes_screen.dart';
 import 'driver_attendance_screen.dart';
 import 'attendance_reports_screen.dart';
 import 'school_calendar_screen.dart';
+import 'transfer_management_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -75,8 +76,7 @@ class DashboardScreen extends StatelessWidget {
           );
         }
 
-        if (profileSnapshot.hasError ||
-            !profileSnapshot.hasData) {
+        if (profileSnapshot.hasError || !profileSnapshot.hasData) {
           return Scaffold(
             body: Center(
               child: Text(
@@ -147,8 +147,7 @@ class DashboardScreen extends StatelessWidget {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                              const LoginScreen(),
+                          builder: (context) => const LoginScreen(),
                         ),
                         (route) => false,
                       );
@@ -218,9 +217,7 @@ class DashboardScreen extends StatelessWidget {
           isMainAdmin
               ? 'Welcome to Smart Bus Management System'
               : 'Welcome to your School Dashboard',
-          style: const TextStyle(
-            color: Colors.grey,
-          ),
+          style: const TextStyle(color: Colors.grey),
         ),
         if (!isMainAdmin) ...[
           const SizedBox(height: 8),
@@ -297,9 +294,7 @@ class DashboardScreen extends StatelessWidget {
               Center(
                 child: Text(
                   'No activities available yet.',
-                  style: TextStyle(
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(color: Colors.grey),
                 ),
               ),
             ],
@@ -328,9 +323,7 @@ class DashboardScreen extends StatelessWidget {
           isDriver
               ? 'Welcome to your driver dashboard.'
               : 'Welcome to your bus assistant dashboard.',
-          style: const TextStyle(
-            color: Colors.grey,
-          ),
+          style: const TextStyle(color: Colors.grey),
         ),
         const SizedBox(height: 28),
         Container(
@@ -423,8 +416,7 @@ class DashboardScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const SchoolsScreen(),
+                    builder: (context) => const SchoolsScreen(),
                   ),
                 );
               },
@@ -438,8 +430,7 @@ class DashboardScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      const StudentsScreen(),
+                  builder: (context) => const StudentsScreen(),
                 ),
               );
             },
@@ -453,8 +444,7 @@ class DashboardScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      const DriversScreen(),
+                  builder: (context) => const DriversScreen(),
                 ),
               );
             },
@@ -468,8 +458,7 @@ class DashboardScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      const AssistantsScreen(),
+                  builder: (context) => const AssistantsScreen(),
                 ),
               );
             },
@@ -483,12 +472,11 @@ class DashboardScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      const BusesScreen(),
-                  ),
-                );
-              },
-            ),
+                  builder: (context) => const BusesScreen(),
+                ),
+              );
+            },
+          ),
           _menuItem(
             context,
             Icons.route,
@@ -498,8 +486,24 @@ class DashboardScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
+                  builder: (context) => const RoutesScreen(),
+                ),
+              );
+            },
+          ),
+
+          // Transfer Management for School Admin and Main Admin.
+          _menuItem(
+            context,
+            Icons.swap_horiz,
+            'Transfer Management',
+            false,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
                   builder: (context) =>
-                      const RoutesScreen(),
+                      const TransferManagementScreen(),
                 ),
               );
             },
@@ -702,9 +706,7 @@ class _StatCard extends StatelessWidget {
           ),
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.grey,
-            ),
+            style: const TextStyle(color: Colors.grey),
           ),
         ],
       ),

@@ -1,1 +1,39 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"smart-school-bus-qatar","appId":"1:663954624792:android:8cb6ca9370fbac7f764e6d","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"smart-school-bus-qatar","configurations":{"android":"1:663954624792:android:8cb6ca9370fbac7f764e6d","web":"1:663954624792:web:28d3419fd2e48f40764e6d"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "smart-school-bus-qatar",
+          "appId": "1:663954624792:android:8cb6ca9370fbac7f764e6d",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "smart-school-bus-qatar",
+          "configurations": {
+            "android": "1:663954624792:android:8cb6ca9370fbac7f764e6d",
+            "web": "1:663954624792:web:28d3419fd2e48f40764e6d"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+  ]
+}

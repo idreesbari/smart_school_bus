@@ -1,6 +1,9 @@
-
 import 'package:flutter/material.dart';
-
+import 'package:excel/excel.dart'
+    as excel_pkg
+    show Excel, TextCellValue, IntCellValue;
+import 'package:share_plus/share_plus.dart';
+import 'dart:typed_data';
 import '../services/school_calendar_service.dart';
 
 class SchoolCalendarScreen extends StatefulWidget {
@@ -20,6 +23,7 @@ class _SchoolCalendarScreenState extends State<SchoolCalendarScreen> {
 
   late DateTime _selectedMonth;
   late Future<Map<String, Map<String, dynamic>>> _calendarFuture;
+  bool _isExporting = false;
 
   @override
   void initState() {
@@ -137,7 +141,168 @@ class _SchoolCalendarScreenState extends State<SchoolCalendarScreen> {
     }
   }
 
-  Future<void> _showDayDialog(
+  Future<void> _exportToExcel(
+    Map<String, Map<String, dynamic>> calendar,
+  ) async {
+    if (_isExporting) return;
+
+    setState(() {
+      _isExporting = true;
+    });
+
+    try {
+      final daysInMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + 1,
+        0,
+      ).day;
+
+      int workingDays = 0;
+      int holidays = 0;
+      int closures = 0;
+      int specialWorkingDays = 0;
+
+      final excel = excel_pkg.Excel.createExcel();
+      final sheet = excel['School Calendar'];
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('SCHOOL CALENDAR REPORT'),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Month'),
+        excel_pkg.TextCellValue(
+          '${_monthName(_selectedMonth.month)} ${_selectedMonth.year}',
+        ),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue(''),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Date'),
+        excel_pkg.TextCellValue('Day'),
+        excel_pkg.TextCellValue('Day Type'),
+        excel_pkg.TextCellValue('Working Day'),
+        excel_pkg.TextCellValue('Reason'),
+      ]);
+
+      const weekdays = [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ];
+
+      for (int day = 1; day <= daysInMonth; day++) {
+        final date = DateTime(
+          _selectedMonth.year,
+          _selectedMonth.month,
+          day,
+        );
+
+        final type = _dayType(date, calendar);
+        final isWorking = _isWorkingDay(date, calendar);
+
+        if (isWorking) workingDays++;
+        if (type == 'holiday') holidays++;
+        if (type == 'closed') closures++;
+        if (type == 'working') specialWorkingDays++;
+
+        final entry = calendar[_dateKey(date)];
+
+        final dayTypeLabel = switch (type) {
+          'holiday' => 'Holiday',
+          'closed' => 'School Closed',
+          'working' => 'Special Working Day',
+          _ => _isDefaultWorkingDay(date)
+              ? 'Regular Working Day'
+              : 'Weekend',
+        };
+
+        sheet.appendRow([
+          excel_pkg.TextCellValue(_dateKey(date)),
+          excel_pkg.TextCellValue(weekdays[date.weekday - 1]),
+          excel_pkg.TextCellValue(dayTypeLabel),
+          excel_pkg.TextCellValue(isWorking ? 'Yes' : 'No'),
+          excel_pkg.TextCellValue(
+            entry?['reason']?.toString() ?? '',
+          ),
+        ]);
+      }
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue(''),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('MONTHLY SUMMARY'),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Working Days'),
+        excel_pkg.IntCellValue(workingDays),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Holidays'),
+        excel_pkg.IntCellValue(holidays),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('School Closures'),
+        excel_pkg.IntCellValue(closures),
+      ]);
+
+      sheet.appendRow([
+        excel_pkg.TextCellValue('Special Working Days'),
+        excel_pkg.IntCellValue(specialWorkingDays),
+      ]);
+
+      final bytes = excel.save();
+
+      if (bytes == null) {
+        throw Exception('Unable to generate Excel file.');
+      }
+
+      final monthNumber =
+          _selectedMonth.month.toString().padLeft(2, '0');
+
+      final fileName =
+          'School_Calendar_${_selectedMonth.year}_$monthNumber.xlsx';
+
+      if (!mounted) return;
+
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            Uint8List.fromList(bytes),
+            mimeType:
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            name: fileName,
+          ),
+        ],
+        text:
+            'School Calendar - ${_monthName(_selectedMonth.month)} ${_selectedMonth.year}',
+      );
+    } catch (e) {
+      _showMessage(
+        'Unable to export school calendar: $e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExporting = false;
+        });
+      }
+    }
+  }
+    Future<void> _showDayDialog(
     DateTime date,
     Map<String, dynamic>? existing,
   ) async {
@@ -469,6 +634,7 @@ class _SchoolCalendarScreenState extends State<SchoolCalendarScreen> {
     );
 
     final startingOffset = firstDay.weekday % 7;
+
     final daysInMonth = DateTime(
       _selectedMonth.year,
       _selectedMonth.month + 1,
@@ -781,6 +947,24 @@ class _SchoolCalendarScreenState extends State<SchoolCalendarScreen> {
                         onPressed: () => _changeMonth(1),
                         icon: const Icon(Icons.chevron_right),
                         color: primaryBlue,
+                      ),
+                      IconButton(
+                        tooltip: 'Export to Excel',
+                        onPressed: _isExporting
+                            ? null
+                            : () => _exportToExcel(calendar),
+                        icon: _isExporting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.file_download,
+                                color: primaryBlue,
+                              ),
                       ),
                     ],
                   ),
